@@ -161,3 +161,7 @@ cython_debug/
 
 logs/*
 kubeconfig/
+# Airflow local runtime
+config/
+plugins/
+airflow*.env
