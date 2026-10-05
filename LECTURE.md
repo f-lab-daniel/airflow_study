@@ -159,7 +159,7 @@ flowchart LR
 
 ## 6. Airflow 아키텍처
 
-**Single Node**: API 서버, 스케줄러, DAG 프로세서, 메타 DB가 한 머신에서 동작합니다. `LocalExecutor`로 같은 머신의 프로세스에서 task를 실행합니다. (README의 A 방법)
+**Single Node**: API 서버, 스케줄러, DAG 프로세서, 메타 DB가 한 머신에서 동작합니다. `LocalExecutor`로 같은 머신의 프로세스에서 task를 실행합니다.
 
 ```mermaid
 flowchart LR
@@ -170,7 +170,7 @@ flowchart LR
     end
 ```
 
-**Multi Node**: 스케줄러가 큐(예: Redis, RabbitMQ)에 task를 넣고, 여러 머신의 worker가 꺼내서 실행합니다. `CeleryExecutor` 구성입니다. (README의 B, C 방법)
+**Multi Node**: 스케줄러가 큐(예: Redis, RabbitMQ)에 task를 넣고, 여러 머신의 worker가 꺼내서 실행합니다. `CeleryExecutor` 구성입니다. 이 레포의 `docker-compose.yaml`이 이 구조입니다.
 
 ```mermaid
 flowchart LR

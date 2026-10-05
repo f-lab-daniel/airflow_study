@@ -51,8 +51,6 @@ x-airflow-common:
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
   image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.3.2}
   # build: .
-  env_file:
-    - ${ENV_FILE_PATH:-.env}
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -60,7 +58,7 @@ x-airflow-common:
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
-    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
@@ -77,14 +75,18 @@ x-airflow-common:
     # 12_spark_k8s.py: EKS 인증(aws eks get-token)에 사용
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-    # The following line can be used to set a custom config file, stored in the local config folder
-    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # 실습 DAG용 Connection / Variable (AIRFLOW_CONN_<ID>, AIRFLOW_VAR_<KEY>)
+    # 환경 변수로 등록한 값은 메타 DB에 저장되지 않아 UI의 Connections 목록에는 보이지 않습니다.
+    AIRFLOW_CONN_MY_POSTGRES_CONNECTION: '{"conn_type": "postgres", "host": "postgres", "port": 5432, "login": "study_user", "password": "study_pass", "schema": "study_db"}'
+    AIRFLOW_CONN_MY_HTTP_CONNECTION: '{"conn_type": "http", "host": "swapi.dev", "schema": "https"}'
+    AIRFLOW_VAR_VAR1: value1
+    AIRFLOW_VAR_VAR2: value2
+    AIRFLOW_VAR_VAR_DICT: '{"var1": "value1", "var2": "value2"}'
   volumes:
+    # dags/: 코드를 수정하면 컨테이너에 바로 반영됩니다.
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    # logs/: 워커가 쓴 태스크 로그를 API 서버(UI)가 읽을 수 있도록 공유합니다. 컨테이너를 지워도 남습니다.
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
-    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
-    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-    - ${AIRFLOW_PROJ_DIR:-.}/kubeconfig:/opt/airflow/kubeconfig
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -102,6 +104,11 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
+      # 볼륨이 비어 있을 때(최초 실행)만 실행: 실습 DB study_db와 테이블 생성
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      # DB 클라이언트(DBeaver 등) 접속용. Mac의 PostgreSQL(5432)과 겹치지 않게 5433 사용
+      - "5433:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -215,7 +222,7 @@ services:
     command:
       - -c
       - |
-        if [[ -z "${AIRFLOW_UID}" ]]; then
+        if [[ -z "${AIRFLOW_UID:-50000}" ]]; then
           echo
           echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
           echo "If you are on Linux, you SHOULD follow the instructions below to set "

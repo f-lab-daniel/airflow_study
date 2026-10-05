@@ -1,11 +1,6 @@
 -- postgres 컨테이너가 처음 뜰 때 한 번 실행됩니다.
+-- Airflow 메타데이터 DB(airflow)와 별도로 DAG 실습용 DB를 만듭니다.
 
--- 1) Airflow 메타데이터 DB
-CREATE USER airflow_user WITH PASSWORD 'airflow_pass';
-CREATE DATABASE airflow_db OWNER airflow_user ENCODING 'UTF8';
-ALTER USER airflow_user SET search_path = public;
-
--- 2) DAG 실습 DB
 CREATE USER study_user WITH PASSWORD 'study_pass';
 CREATE DATABASE study_db OWNER study_user ENCODING 'UTF8';
 

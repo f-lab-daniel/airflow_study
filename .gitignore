@@ -161,10 +161,6 @@ cython_debug/
 
 logs/*
 kubeconfig/
-# Airflow local runtime
-config/
-plugins/
-airflow*.env
 
 # Serena (local coding assistant)
 .serena/
