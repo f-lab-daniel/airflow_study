@@ -1,0 +1,16 @@
+# KubernetesExecutor 오버레이: values.yaml 뒤에 함께 지정합니다.
+#
+#   helm upgrade --install airflow apache-airflow/airflow \
+#     --namespace airflow --version 1.22.0 \
+#     -f k8s/values.yaml -f k8s/values-kubernetes-executor.yaml
+#
+# 태스크마다 Pod가 하나씩 생성되어 실행되고 끝나면 사라집니다.
+# Redis와 Celery 워커 StatefulSet은 만들어지지 않습니다.
+executor: KubernetesExecutor
+
+config:
+  kubernetes_executor:
+    # 실습용: 끝난 태스크 Pod를 지우지 않고 남겨 둡니다.
+    # UI는 태스크 로그를 Pod에서 직접 읽으므로, Pod가 지워지면 로그도 볼 수 없습니다.
+    # 운영 환경에서는 'True'로 두고 원격 로깅(S3, GCS 등)을 설정하세요.
+    delete_worker_pods: 'False'

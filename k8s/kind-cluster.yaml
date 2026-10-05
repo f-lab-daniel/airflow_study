@@ -1,0 +1,8 @@
+# 실습용 로컬 Kubernetes 클러스터 (kind)
+# 생성: kind create cluster --config k8s/kind-cluster.yaml
+# 삭제: kind delete cluster --name airflow-study
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: airflow-study
+nodes:
+  - role: control-plane

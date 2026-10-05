@@ -1,0 +1,63 @@
+# Apache Airflow 공식 Helm 차트 values (차트 1.22.0, Airflow 3.3.2)
+# 전체 옵션: helm show values apache-airflow/airflow --version 1.22.0
+#
+# 설치:
+#   helm upgrade --install airflow apache-airflow/airflow \
+#     --namespace airflow --version 1.22.0 -f k8s/values.yaml
+
+# 차트 1.22.0의 기본 Airflow 버전은 3.2.2이므로 3.3.2로 지정합니다.
+airflowVersion: "3.3.2"
+defaultAirflowTag: "3.3.2"
+
+# CeleryExecutor: scheduler → redis 큐 → worker(StatefulSet) 구조
+# KubernetesExecutor로 바꾸려면 values-kubernetes-executor.yaml을 함께 지정합니다.
+executor: CeleryExecutor
+
+# ---------------------------------------------------------------------------
+# 보안 키: 컴포넌트(api-server, scheduler, worker ...)가 같은 값을 써야 합니다.
+# 차트가 자동 생성하게 두면 helm upgrade 때 바뀌어 로그 조회/인증이 깨질 수 있으므로
+# 미리 Secret으로 만들어 두고 이름만 지정합니다. (manifests/airflow-secrets.yaml)
+# ---------------------------------------------------------------------------
+apiSecretKeySecretName: airflow-api-secret   # [api] secret_key, 키 이름: api-secret-key
+jwtSecretName: airflow-jwt-secret            # [api_auth] jwt_secret, 키 이름: jwt-secret
+
+# 최초 관리자 계정 (createUserJob이 설치 시 생성)
+createUserJob:
+  defaultUser:
+    username: admin
+    password: admin
+
+# ---------------------------------------------------------------------------
+# DAG 배포: git-sync 사이드카가 Git 저장소를 주기적으로 받아옵니다.
+# main 브랜치에 push하면 period 이내에 모든 컴포넌트에 반영됩니다.
+# ---------------------------------------------------------------------------
+dags:
+  gitSync:
+    enabled: true
+    repo: https://github.com/f-lab-daniel/airflow_study.git
+    branch: main
+    ref: main
+    subPath: dags     # 저장소 안에서 DAG가 있는 폴더
+    period: 30s
+    # private 저장소라면 credentialsSecret(HTTPS 토큰) 또는 sshKeySecret(SSH 키)을 지정합니다.
+    # credentialsSecret: git-credentials
+
+# ---------------------------------------------------------------------------
+# Connection / Variable: Secret의 AIRFLOW_CONN_* / AIRFLOW_VAR_* 키를
+# 모든 Airflow 컨테이너에 환경 변수로 주입합니다. (manifests/airflow-connections.yaml)
+# ---------------------------------------------------------------------------
+extraEnvFrom: |
+  - secretRef:
+      name: airflow-connections
+
+# ---------------------------------------------------------------------------
+# 메타데이터 DB: 실습용으로 차트에 포함된 PostgreSQL을 사용합니다.
+# 운영 환경에서는 외부 DB(RDS 등)를 쓰고 postgresql.enabled=false,
+# data.metadataSecretName을 지정합니다. (README의 운영 환경 체크리스트 참고)
+# ---------------------------------------------------------------------------
+postgresql:
+  enabled: true
+
+# Celery 워커 1개 (기본값). 태스크 로그는 워커의 PVC에 저장되고 UI가 워커에서 읽어 옵니다.
+workers:
+  replicas: 1

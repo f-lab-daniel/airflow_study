@@ -1,0 +1,102 @@
+# DAG 실습용 PostgreSQL (Airflow 메타데이터 DB와 별개)
+# 2_postgres_loader.py, 3_http_dag.py가 my_postgres_connection으로 접속합니다.
+#
+# 접속: kubectl exec -it -n airflow deploy/study-db -- psql -U study_user -d study_db
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: study-db-init
+  namespace: airflow
+data:
+  # postgres 컨테이너가 빈 데이터 디렉토리로 처음 뜰 때 한 번 실행됩니다. (레포의 initdb/study_db.sql과 같은 내용)
+  study_db.sql: |
+    CREATE USER study_user WITH PASSWORD 'study_pass';
+    CREATE DATABASE study_db OWNER study_user ENCODING 'UTF8';
+
+    \connect study_db study_user
+
+    CREATE TABLE public.sample_table (
+        id    serial PRIMARY KEY,
+        key   VARCHAR(50) NOT NULL,
+        value VARCHAR(50) NOT NULL
+    );
+
+    CREATE TABLE public.starwars_character (
+        name   TEXT NOT NULL,
+        height TEXT NOT NULL,
+        mass   TEXT NOT NULL
+    );
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: study-db-data
+  namespace: airflow
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: study-db
+  namespace: airflow
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 같은 PVC를 두 Pod가 동시에 쓰지 않도록
+  selector:
+    matchLabels:
+      app: study-db
+  template:
+    metadata:
+      labels:
+        app: study-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: postgres
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: study-db-data
+        - name: init
+          configMap:
+            name: study-db-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: study-db
+  namespace: airflow
+spec:
+  selector:
+    app: study-db
+  ports:
+    - port: 5432
+      targetPort: 5432
