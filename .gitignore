@@ -165,3 +165,6 @@ kubeconfig/
 config/
 plugins/
 airflow*.env
+
+# Serena (local coding assistant)
+.serena/
