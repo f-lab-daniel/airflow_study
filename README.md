@@ -3,6 +3,7 @@
 F-Lab Airflow 강의 실습 레포입니다. **Apache Airflow 3.3.2**를 Docker Compose로 실행합니다.
 
 - 강의 노트: [LECTURE.md](LECTURE.md)
+- Kubernetes 배포 가이드: [k8s/README.md](k8s/README.md)
 
 **학습 순서**: [LECTURE.md](LECTURE.md)로 개념을 익히고 → [시작하기](#시작하기)로 Airflow를 띄운 뒤 → `dags/`의 1번부터 12번까지 순서대로 실행해 봅니다.
 
@@ -26,13 +27,13 @@ git clone https://github.com/f-lab-daniel/airflow_study.git
 cd airflow_study
 
 docker compose up -d
-docker compose ps    # 모든 컨테이너가 (healthy)가 될 때까지 1~2분, airflow-init은 exited (0)
+docker compose ps    # 모든 컨테이너가 (healthy)가 될 때까지 1~2분, airflow-init·airflow-bootstrap은 exited (0)
 ```
 
 - Web UI: http://localhost:8080
 - 계정: `airflow` / `airflow`
 
-Connection, Variable, 실습 DB와 테이블은 모두 자동으로 준비되므로 바로 DAG를 실행할 수 있습니다.
+Connection, Variable, 실습 DB와 테이블은 모두 자동으로 준비되므로 바로 DAG를 실행할 수 있습니다. Connection과 Variable은 UI의 **Admin → Connections / Variables**에서 확인할 수 있습니다.
 
 ## 레포 구성
 
@@ -50,9 +51,12 @@ Connection, Variable, 실습 DB와 테이블은 모두 자동으로 준비되므
 | `dags/10_logical_date.py` | `logical_date`, `ds`, `data_interval_start/end`, logical date 기준 2일 전 | [16. Logical Date](LECTURE.md#16-logical-date와-템플릿) |
 | `dags/11_templating.py` | Jinja 템플릿, `dag_run.conf`, `render_template_as_native_obj` | [16. 템플릿](LECTURE.md#16-logical-date와-템플릿) |
 | `dags/12_spark_k8s.py`, `dags/sample.yaml` | `SparkKubernetesOperator`로 SparkApplication 제출 (EKS 필요) | [7. Provider](LECTURE.md#7-provider) |
+| `dags/13_kubernetes_pod_operator.py` | `KubernetesPodOperator`로 태스크를 별도 Pod에서 실행 (Kubernetes 전용) | [k8s/README.md](k8s/README.md#kubernetes-활용-kubernetespodoperator) |
 | `docker-compose.yaml` | 공식 Airflow 3.3.2 Compose + 이 레포용 설정 | |
 | `initdb/study_db.sql` | 실습 DB `study_db`와 테이블 생성 SQL (PostgreSQL 최초 실행 시 자동 실행) | |
+| `bootstrap/` | 실습용 Connection(`connections.json`) · Variable(`variables.json`). 기동 시 메타 DB에 등록 | |
 | `logs/` | 태스크 실행 로그 (컨테이너에서 자동 생성, git 제외) | |
+| `k8s/` | Kubernetes(Helm 차트) 배포 가이드와 예시 values·매니페스트 | |
 
 ## 구성 설명
 
@@ -80,7 +84,8 @@ flowchart LR
 | `airflow-triggerer` | Deferrable Operator의 대기 처리 |
 | `redis` | Celery 브로커 (태스크 큐) |
 | `postgres` (16) | `airflow`: Airflow 메타데이터 DB<br>`study_db`: DAG 실습 DB (호스트 포트 `5433`) |
-| `airflow-init` | 최초 1회 DB 마이그레이션, 관리자 계정 생성 후 종료 |
+| `airflow-init` | DB 마이그레이션, 관리자 계정 생성 후 종료 |
+| `airflow-bootstrap` | `bootstrap/`의 Connection·Variable을 메타 DB에 등록한 뒤 종료 |
 
 **레포 폴더 마운트**
 
@@ -89,20 +94,19 @@ flowchart LR
 | `dags/` | `/opt/airflow/dags` | DAG 코드를 수정하면 컨테이너에 바로 반영됩니다 (반영까지 수십 초) |
 | `logs/` | `/opt/airflow/logs` | 워커가 쓴 로그를 UI가 읽을 수 있게 공유합니다. 컨테이너를 지워도 남습니다 |
 
-**자동으로 준비되는 것** (`docker-compose.yaml`의 환경 변수와 `initdb/`)
+**자동으로 준비되는 것**
 
-| 항목 | 값 |
-|---|---|
-| Connection `my_postgres_connection` | `postgres:5432` / `study_db` / `study_user` |
-| Connection `my_http_connection` | `https://swapi.dev` |
-| Variable `var1`, `var2`, `var_dict` | `value1`, `value2`, `{"var1": "value1", "var2": "value2"}` |
-| 실습 DB `study_db` | 테이블 `sample_table`, `starwars_character` |
+| 항목 | 값 | 준비하는 곳 |
+|---|---|---|
+| Connection `my_postgres_connection` | `postgres:5432` / `study_db` / `study_user` | `bootstrap/connections.json` |
+| Connection `my_http_connection` | `https://swapi.dev` | `bootstrap/connections.json` |
+| Variable `var1`, `var2`, `var_dict` | `value1`, `value2`, `{"var1": "value1", "var2": "value2"}` | `bootstrap/variables.json` |
+| 실습 DB `study_db` | 테이블 `sample_table`, `starwars_character` | `initdb/study_db.sql` |
 
-> 환경 변수(`AIRFLOW_CONN_*`, `AIRFLOW_VAR_*`)로 등록한 Connection·Variable은 메타 DB에 저장되지 않아 **UI의 Admin 목록에는 보이지 않습니다.** DAG에서는 정상적으로 사용됩니다. CLI로 확인할 수 있습니다:
-> ```bash
-> docker compose exec airflow-scheduler airflow connections get my_postgres_connection
-> docker compose exec airflow-scheduler airflow variables get var1
-> ```
+Connection과 Variable은 `airflow-bootstrap`이 `airflow connections import` / `airflow variables import`로 **메타 DB에 등록**합니다. 그래서 UI의 Admin 메뉴에 보이고, UI에서 바로 수정할 수 있습니다.
+
+- `docker compose up` 할 때마다 실행되지만 **이미 있는 항목은 건너뜁니다.** UI에서 수정한 값은 재기동해도 유지됩니다.
+- `bootstrap/*.json`을 고친 내용을 반영하려면 UI에서 해당 항목을 지운 뒤 `docker compose up -d --force-recreate airflow-bootstrap` 하거나, [정리 2단계](#정리-clean-up)로 DB를 초기화합니다.
 
 ## DAG 실행해 보기
 
@@ -139,6 +143,7 @@ docker compose exec airflow-scheduler airflow tasks test sample_dag print_hello_
 | `access_variable` | 로그에 `value1`, `value2` |
 | `templating` | conf를 넣어 실행: `airflow dags trigger templating -c '{"numbers": [1, 2, 3]}'` → `sum_numbers1`, `sum_numbers2` 반환값 6 |
 | `print_logical_date` | 2분마다 실행되며 `logical_date`, `data_interval`, 2일 전 날짜 출력 |
+| `kubernetes_pod_operator` | Kubernetes 위의 Airflow에서만 동작합니다. [k8s/README.md](k8s/README.md) 참고 |
 | `spark_submit_sample` | EKS 클러스터가 필요합니다 (강의 환경 전용). `eks-flab` Connection을 Kubernetes 타입으로 만들고 Extra의 `kube_config`에 kubeconfig 내용을 넣습니다 |
 
 ## 실습 DB 접속
@@ -214,11 +219,12 @@ docker volume ls --filter name=airflow_study
 | `docker compose ps`에서 계속 `(starting)` / `unhealthy` | Docker Desktop 메모리가 부족. Settings → Resources에서 4GB 이상으로 올린 뒤 `docker compose down && docker compose up -d` |
 | `port is already allocated` (8080 또는 5433) | 다른 프로그램이 포트 사용 중. `lsof -i :8080` / `lsof -i :5433`으로 확인 후 종료 |
 | `postgres` 컨테이너 unhealthy, 로그에 `database files are incompatible with server` | 다른 PostgreSQL 버전으로 만든 볼륨이 남아 있음. `docker compose down -v` 후 다시 `up` |
+| UI에 Connection·Variable이 안 보임 | `docker compose logs airflow-bootstrap`로 import 결과 확인 (`Imported connection ...`, `3 of 3 variables successfully updated`) |
 | `relation "sample_table" does not exist` | `initdb/`가 실행되지 않은 이전 볼륨. `docker compose down -v` 후 다시 `up` |
 | DAG가 UI에 안 보임 | 파싱 오류: `airflow dags list-import-errors`. 새 파일은 반영까지 수십 초 걸릴 수 있음 |
 | 태스크가 `queued`에서 멈춤 | `docker compose ps`로 `airflow-worker`가 healthy인지 확인. `docker compose logs airflow-worker` |
 | UI에서 태스크 로그가 안 보임 | `logs/` 마운트 확인 (`docker compose config | grep logs`) |
-| SWAPI 호출 실패 | `swapi.dev`가 간헐적으로 응답하지 않습니다. `docker-compose.yaml`의 `AIRFLOW_CONN_MY_HTTP_CONNECTION` host를 미러 `swapi.info`로 바꾼 뒤 `docker compose up -d` |
+| SWAPI 호출 실패 | `swapi.dev`가 간헐적으로 응답하지 않습니다. UI의 Admin → Connections에서 `my_http_connection`의 Host를 미러 `swapi.info`로 바꿔 보세요 |
 
 로그 보기: `docker compose logs -f airflow-scheduler` (다른 서비스도 같은 방식)
 
@@ -226,5 +232,5 @@ docker volume ls --filter name=airflow_study
 
 - [Airflow 3.3.2 문서](https://airflow.apache.org/docs/apache-airflow/stable/index.html) · [Release Notes](https://airflow.apache.org/docs/apache-airflow/stable/release_notes.html)
 - [Running Airflow in Docker](https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html)
-- [Managing Connections (환경 변수)](https://airflow.apache.org/docs/apache-airflow/stable/howto/connection.html#storing-connections-in-environment-variables) · [Variables](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html#storing-variables-in-environment-variables)
+- [Managing Connections](https://airflow.apache.org/docs/apache-airflow/stable/howto/connection.html) · [Variables](https://airflow.apache.org/docs/apache-airflow/stable/howto/variable.html)
 - [Celery Executor](https://airflow.apache.org/docs/apache-airflow-providers-celery/stable/celery_executor.html)

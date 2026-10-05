@@ -1,0 +1,17 @@
+{
+  "my_postgres_connection": {
+    "conn_type": "postgres",
+    "description": "실습 DB (2_postgres_loader.py, 3_http_dag.py)",
+    "host": "postgres",
+    "port": 5432,
+    "login": "study_user",
+    "password": "study_pass",
+    "schema": "study_db"
+  },
+  "my_http_connection": {
+    "conn_type": "http",
+    "description": "Star Wars API (3_http_dag.py)",
+    "host": "swapi.dev",
+    "schema": "https"
+  }
+}

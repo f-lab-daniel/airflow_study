@@ -75,13 +75,6 @@ x-airflow-common:
     # 12_spark_k8s.py: EKS 인증(aws eks get-token)에 사용
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-    # 실습 DAG용 Connection / Variable (AIRFLOW_CONN_<ID>, AIRFLOW_VAR_<KEY>)
-    # 환경 변수로 등록한 값은 메타 DB에 저장되지 않아 UI의 Connections 목록에는 보이지 않습니다.
-    AIRFLOW_CONN_MY_POSTGRES_CONNECTION: '{"conn_type": "postgres", "host": "postgres", "port": 5432, "login": "study_user", "password": "study_pass", "schema": "study_db"}'
-    AIRFLOW_CONN_MY_HTTP_CONNECTION: '{"conn_type": "http", "host": "swapi.dev", "schema": "https"}'
-    AIRFLOW_VAR_VAR1: value1
-    AIRFLOW_VAR_VAR2: value2
-    AIRFLOW_VAR_VAR_DICT: '{"var1": "value1", "var2": "value2"}'
   volumes:
     # dags/: 코드를 수정하면 컨테이너에 바로 반영됩니다.
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
@@ -306,6 +299,27 @@ services:
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
       _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
+
+  # 실습용 Connection / Variable을 메타 DB에 등록하고 종료합니다.
+  # DB에 저장되므로 UI의 Admin → Connections / Variables에서 보고 수정할 수 있습니다.
+  # 이미 있는 항목은 건너뛰므로, UI에서 수정한 값은 재기동해도 유지됩니다.
+  airflow-bootstrap:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow connections import /opt/airflow/bootstrap/connections.json
+        airflow variables import /opt/airflow/bootstrap/variables.json --action-on-existing-key skip
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-.}/bootstrap:/opt/airflow/bootstrap:ro
+    environment:
+      <<: *airflow-common-env
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
 
   airflow-cli:
     <<: *airflow-common

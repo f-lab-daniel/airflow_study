@@ -1,0 +1,5 @@
+{
+  "var1": "value1",
+  "var2": "value2",
+  "var_dict": {"var1": "value1", "var2": "value2"}
+}
