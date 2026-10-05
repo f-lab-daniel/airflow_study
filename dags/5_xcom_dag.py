@@ -1,43 +1,40 @@
-import json
 import random
-from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
-from airflow.utils.dates import days_ago
+from datetime import datetime
+
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG
+
 
 def generate_number(**context):
     number = random.randint(0, 100)
     print(f"Generated number: {number}")
     # push the integer
-    context["ti"].xcom_push(
-        key='random_number',
-        value=number)
+    context["ti"].xcom_push(key="random_number", value=number)
     # # push the json
-    # ti.xcom_push(
-    #     key='random_number',
-    #     value=json.dumps({"v": number}))
+    # context["ti"].xcom_push(key="random_number", value={"v": number})
+
 
 def read_number(ti):
-    number = ti.xcom_pull(
-            key='random_number',
-            task_ids='generate_number_task')
+    number = ti.xcom_pull(key="random_number", task_ids="generate_number_task")
     print(f"Received number: {number}")
+
 
 with DAG(
     dag_id="xcom_dag",
-    start_date=days_ago(2),
+    start_date=datetime(2026, 1, 1),
     schedule="@daily",
     default_args={"retries": 1},
-    catchup=False
+    catchup=False,
 ):
-    # provide_context: PythonOperator allows the task instance (ti) to be passed to the Python callable
+    # PythonOperator passes context values (ti, ds, ...) that match the callable's arguments
     generate_number_task = PythonOperator(
-        task_id='generate_number_task',
+        task_id="generate_number_task",
         python_callable=generate_number,
-        provide_context=True)
+    )
 
     read_number_task = PythonOperator(
-        task_id='read_number_task',
+        task_id="read_number_task",
         python_callable=read_number,
-        provide_context=True)
+    )
 
-generate_number_task >> read_number_task
+    generate_number_task >> read_number_task

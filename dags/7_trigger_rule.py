@@ -1,15 +1,19 @@
-from airflow import DAG
-from airflow.operators.dummy_operator import DummyOperator
-from airflow.utils.dates import days_ago
+from datetime import datetime
 
-with DAG('trigger_rule_example', start_date=days_ago(2)):
-    task1 = DummyOperator(task_id='task1')
-    task2 = DummyOperator(task_id='task2')
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import DAG, TriggerRule
 
-    task3 = DummyOperator(
-        task_id='task3',
-        trigger_rule='one_success'
+with DAG(
+    dag_id="trigger_rule_example",
+    start_date=datetime(2026, 1, 1),
+    schedule=None,
+):
+    task1 = EmptyOperator(task_id="task1")
+    task2 = EmptyOperator(task_id="task2")
+
+    task3 = EmptyOperator(
+        task_id="task3",
+        trigger_rule=TriggerRule.ONE_SUCCESS,
     )
 
-task1 >> task3
-task2 >> task3
+    [task1, task2] >> task3

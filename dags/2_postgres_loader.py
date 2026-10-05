@@ -1,46 +1,48 @@
-from airflow import DAG
-from airflow.providers.postgres.operators.postgres import PostgresOperator
-from airflow.sensors.sql import SqlSensor
 from datetime import datetime
 
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.providers.common.sql.sensors.sql import SqlSensor
+from airflow.sdk import DAG
+
 default_args = {
-    'owner': 'airflow',
-    'start_date': datetime(2023, 7, 1)
+    "owner": "airflow",
 }
 
 # Define the DAG
-with DAG('postgres_loader',
-          description='PostgreSQL Loader Example',
-          default_args=default_args,
-          schedule_interval='0 0 * * *',
-          catchup=False) as dag:
+with DAG(
+    dag_id="postgres_loader",
+    description="PostgreSQL Loader Example",
+    default_args=default_args,
+    schedule="0 0 * * *",
+    start_date=datetime(2026, 1, 1),
+    catchup=False,
+):
+    # Task: Execute a SQL query on the connection's database
+    postgres_task = SQLExecuteQueryOperator(
+        task_id="execute_sql_query",
+        conn_id="my_postgres_connection",
+        sql="""
+            INSERT INTO sample_table (key, value)
+            VALUES ('hello', 'world')
+        """,
+    )
 
-    # Task: Execute a SQL query using PostgresOperator
-    sql_query = '''
-        INSERT INTO sample_table (key, value)
-        VALUES ('hello', 'world')
-    '''
+    # Sensor: wait until a row with key='hello1' exists
+    sql_sensor = SqlSensor(
+        task_id="wait_for_condition",
+        conn_id="my_postgres_connection",
+        sql="SELECT COUNT(*) FROM sample_table WHERE key='hello1'",
+        mode="reschedule",
+        poke_interval=5,
+    )
 
-    postgres_task = PostgresOperator(task_id='execute_sql_query',
-                                    postgres_conn_id='my_postgres_connection',
-                                    sql=sql_query,
-                                    dag=dag)
+    postgres_confirm_task = SQLExecuteQueryOperator(
+        task_id="execute_sql_confirm_query",
+        conn_id="my_postgres_connection",
+        sql="""
+            INSERT INTO sample_table (key, value)
+            VALUES ('sensor', 'confirmed')
+        """,
+    )
 
-    sql_sensor = SqlSensor(task_id='wait_for_condition',
-                        conn_id='my_postgres_connection',
-                        sql="SELECT COUNT(*) FROM sample_table WHERE key='hello1'",
-                        mode='reschedule',
-                        poke_interval=5,
-                        dag=dag)
-    
-    sql_query_confirm = '''
-        INSERT INTO sample_table (key, value)
-        VALUES ('sensor', 'confirmed')
-    '''
-
-    postgres_confirm_task = PostgresOperator(task_id='execute_sql_confirm_query',
-                                    postgres_conn_id='my_postgres_connection',
-                                    sql=sql_query_confirm,
-                                    dag=dag)
-    
-postgres_task >> sql_sensor >> postgres_confirm_task
+    postgres_task >> sql_sensor >> postgres_confirm_task

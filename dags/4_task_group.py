@@ -1,13 +1,12 @@
-import datetime
-from airflow import DAG
-from airflow.decorators import task_group
-from airflow.operators.bash import BashOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.utils.edgemodifier import Label
+from datetime import datetime
+
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import DAG, Label, task_group
 
 with DAG(
     dag_id="task_group",
-    start_date=datetime.datetime(2023, 7, 1),
+    start_date=datetime(2026, 1, 1),
     schedule="@daily",
     default_args={"retries": 1},
     catchup=False,
